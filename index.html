@@ -654,7 +654,7 @@
     const pc = p.hand[p.sel];
     const cells = shapeCells(pc.shape);
     const w = Math.max(...cells.map(c => c[0])) + 1;
-    const a = { shape: pc.shape, color: pc.color, cells, x: Math.floor(GW / 2 - w / 2), y: height(p) + 8 };
+    const a = { shape: pc.shape, color: pc.color, cells, x: Math.floor(GW / 2 - w / 2), y: height(p) + 7 };
     if (keepPos) { a.x = keepPos.x; a.y = keepPos.y; }
     if (keepPos && !fits(p, absCells(a))) return false;
     p.act = a; p.fallT = 0; p.lockT = 0; p.resets = 0;
@@ -990,7 +990,36 @@
     () => ({ tipo: "juego", q: "Hay 4 colores de pieza, igual de probables. ¿Probabilidad de que tu siguiente pieza sea roja?", a: "1/4", w: ["1/3", "1/7"], why: "1 color de 4 = 1/4" }),
     () => ({ tipo: "juego", q: "Hay 7 formas y 4 colores. ¿Cuántos tipos de pieza distintos existen?", a: "28", w: ["11", "24"], why: "7 × 4 = 28" }),
     () => ({ tipo: "juego", q: "¿Probabilidad de que tus 2 siguientes piezas sean ambas rojas (4 colores)?", a: "1/16", w: ["1/8", "1/4"], why: "Independientes: 1/4 × 1/4 = 1/16" }),
-    () => ({ tipo: "contraseña", q: "Un candado usa 2 dígitos del 0 al 9 (se pueden repetir). ¿Cuántas claves hay?", a: "100", w: ["90", "20"], why: "10 × 10 = 100" })
+    () => ({ tipo: "contraseña", q: "Un candado usa 2 dígitos del 0 al 9 (se pueden repetir). ¿Cuántas claves hay?", a: "100", w: ["90", "20"], why: "10 × 10 = 100" }),
+    () => ({ tipo: "contraseña", q: "Un PIN de 3 dígitos (0 a 9) sin repetir. ¿Cuántos PIN hay?", a: "720", w: ["1000", "30"], why: "10 × 9 × 8 = 720" }),
+    () => ({ tipo: "dado", q: "Lanzas un dado de 6 caras. ¿Probabilidad de sacar un número primo (2, 3 o 5)?", a: "1/2", w: ["1/3", "2/3"], why: "3 primos de 6 caras = 1/2" }),
+    () => ({ tipo: "dado", q: "Lanzas un dado 2 veces. ¿Probabilidad de sacar 6 las dos veces?", a: "1/36", w: ["1/6", "1/12"], why: "Independientes: 1/6 × 1/6 = 1/36" }),
+    () => ({ tipo: "dado", q: "Lanzas un dado de 6 caras. ¿Probabilidad de sacar 7?", a: "0", w: ["1/7", "1/6"], why: "No hay cara 7: evento imposible, P = 0" }),
+    () => ({ tipo: "dado", q: "Lanzas un dado de 6 caras. ¿Probabilidad de sacar un número del 1 al 6?", a: "1", w: ["1/6", "5/6"], why: "Siempre pasa: evento seguro, P = 1" }),
+    () => ({ tipo: "dos dados", q: "Lanzas 2 dados. ¿Probabilidad de que la suma sea 12?", a: "1/36", w: ["1/12", "1/6"], why: "Solo 6+6 → 1 de 36" }),
+    () => ({ tipo: "dos dados", q: "Lanzas 2 dados. ¿Probabilidad de que la suma sea 2?", a: "1/36", w: ["2/36", "1/12"], why: "Solo 1+1 → 1 de 36" }),
+    () => ({ tipo: "moneda", q: "Lanzas 3 monedas. ¿Probabilidad de que salgan 3 soles?", a: "1/8", w: ["1/3", "1/6"], why: "1 resultado de 2×2×2 = 8" }),
+    () => ({ tipo: "moneda", q: "Lanzas 3 monedas. ¿Probabilidad de al menos un águila?", a: "7/8", w: ["3/8", "1/2"], why: "Complemento de SSS: 1 − 1/8 = 7/8" }),
+    () => ({ tipo: "moneda", q: "Lanzas 4 monedas. ¿Cuántos resultados posibles hay?", a: "16", w: ["8", "12"], why: "2⁴ = 16" }),
+    () => ({ tipo: "moneda", q: "Una moneda cayó 5 veces águila. ¿Probabilidad de águila en el siguiente tiro?", a: "1/2", w: ["1/6", "1/32"], why: "Cada tiro es independiente: sigue siendo 1/2" }),
+    () => ({ tipo: "baraja", q: "De una baraja de 52 cartas sacas una. ¿Probabilidad de que sea un as?", a: "1/13", w: ["1/52", "1/4"], why: "4 ases de 52 = 4/52 = 1/13" }),
+    () => ({ tipo: "baraja", q: "De una baraja de 52 cartas sacas una. ¿Probabilidad de que sea de corazones?", a: "1/4", w: ["1/13", "1/2"], why: "13 corazones de 52 = 1/4" }),
+    () => { const n = ri(5, 7); return { tipo: "combinación", q: `De ${n} alumnos eliges un equipo de 3. ¿Cuántos equipos distintos hay?`, a: `${comb(n, 3)}`, w: [`${n * (n - 1) * (n - 2)}`, `${3 * n}`], why: `C(${n},3) = ${comb(n, 3)} (el orden no importa)` }; },
+    () => { const n = ri(4, 6); return { tipo: "permutación", q: `${n} personas compiten. ¿De cuántas formas se dan oro y plata?`, a: `${n * (n - 1)}`, w: [`${comb(n, 2)}`, `${n * n}`], why: `${n} × ${n - 1} = ${n * (n - 1)} (el orden sí importa)` }; },
+    () => ({ tipo: "permutación", q: "¿Cuántas palabras (con o sin sentido) se forman con las letras de SOL?", a: "6", w: ["3", "9"], why: "3! = 3 × 2 × 1 = 6" }),
+    () => ({ tipo: "permutación", q: "¿Cuántas palabras distintas se forman con las letras de OSO?", a: "3", w: ["6", "2"], why: "3!/2! = 3 (las dos O son iguales)" }),
+    () => ({ tipo: "combinación", q: "Hay 6 sabores de helado. ¿De cuántas formas eliges 2 sabores distintos?", a: "15", w: ["30", "12"], why: "C(6,2) = 6·5/2 = 15" }),
+    () => ({ tipo: "multiplicativo", q: "Un menú tiene 3 entradas, 4 platos fuertes y 2 postres. ¿Cuántas comidas distintas hay?", a: "24", w: ["9", "12"], why: "3 × 4 × 2 = 24" }),
+    () => ({ tipo: "multiplicativo", q: "Una placa tiene 2 letras (26) y 1 dígito (10). ¿Cuántas placas hay?", a: "6760", w: ["620", "2600"], why: "26 × 26 × 10 = 6760" }),
+    () => { const r = ri(2, 4), az = ri(2, 4), v = ri(1, 3), t = r + az + v; return { tipo: "bolsa", q: `Una bolsa tiene ${r} rojas, ${az} azules y ${v} verdes. ¿Probabilidad de NO sacar verde?`, a: `${r + az}/${t}`, w: [`${v}/${t}`, `${r}/${t + 1}`], why: `${r + az} no verdes de ${t} canicas` }; },
+    () => ({ tipo: "bolsa", q: "Bolsa con 2 rojas y 2 azules. Sacas 2 sin regresar. ¿Probabilidad de que ambas sean rojas?", a: "1/6", w: ["1/4", "1/2"], why: "2/4 × 1/3 = 2/12 = 1/6" }),
+    () => ({ tipo: "ruleta", q: "Una ruleta tiene 8 casillas iguales, 3 son premio. ¿Probabilidad de ganar premio?", a: "3/8", w: ["1/8", "5/8"], why: "3 casillas favorables de 8" }),
+    () => ({ tipo: "ruleta", q: "Una ruleta tiene 8 casillas iguales, 3 son premio. ¿Probabilidad de NO ganar?", a: "5/8", w: ["3/8", "1/8"], why: "Complemento: 1 − 3/8 = 5/8" }),
+    () => ({ tipo: "juego", q: "Tu mano tiene 4 piezas. ¿De cuántas formas puedes elegir el orden para jugarlas?", a: "24", w: ["16", "4"], why: "4! = 24 órdenes" }),
+    () => ({ tipo: "juego", q: "Hay 4 colores. ¿Probabilidad de que tu siguiente pieza NO sea roja?", a: "3/4", w: ["1/4", "1/2"], why: "Complemento: 1 − 1/4 = 3/4" }),
+    () => ({ tipo: "juego", q: "Hay 7 formas de pieza igual de probables. ¿Probabilidad de que salga la forma I?", a: "1/7", w: ["1/4", "1/28"], why: "1 forma de 7" }),
+    () => ({ tipo: "juego", q: "Tu dado de ataque es de 6 caras. ¿Probabilidad de quitar 5 piezas o más?", a: "1/3", w: ["1/6", "1/2"], why: "Caras 5 y 6 → 2 de 6 = 1/3" }),
+    () => ({ tipo: "juego", q: "Si fallas la pregunta pierdes de 1 a 3 piezas al azar. ¿Probabilidad de perder solo 1?", a: "1/3", w: ["1/2", "1/6"], why: "3 resultados igual de probables: 1 de 3" })
   ];
   function wrapText(text, maxW) {
     const words = text.split(" "), lines = []; let line = "";
@@ -1342,20 +1371,26 @@
   }
   const SHOUT_COLORS = { "#ea2b2b": "#fb4903", "#58a700": "#55db9c", "#e5a500": "#ffd731", "#ff9600": "#fb4903", "#1899d6": "#4da2ff", "#4b4b4b": "#ffffff" };
 
-  // Cámara propia para la vista de celular (tablero más grande que en compu)
-  const focusCamState = {};
-  function focusCam(p, bs, GY) {
-    // siempre se ve la punta de la torre y ~6 pisos libres arriba; la pieza entra cayendo desde arriba
-    const want = Math.max(0, (height(p) + 7) * bs - (GY - 96));
-    const prev = focusCamState[p.i] === undefined ? want : focusCamState[p.i];
-    const v = prev + (want - prev) * 0.15;
-    focusCamState[p.i] = v; return v;
+  // Cámara: pegada abajo (se ve la plataforma) mientras la torre quepa.
+  // Si ya no cabe, sube de 2 en 2 pisos para que el borde inferior caiga justo en una línea gris.
+  const viewCamState = {};
+  function viewCam(p, bs, GY, PH) {
+    const fondo = PH - 104;                              // donde empieza la barra de la mano
+    const vis = Math.floor((fondo - 96) / bs);           // pisos visibles
+    const libres = bs > BS ? 3 : 9;                      // pisos libres arriba de la torre
+    let sube = Math.max(0, height(p) + libres - vis);
+    sube = Math.ceil(sube / 2) * 2;                      // siempre en una línea gris
+    const want = sube ? sube * bs + (fondo - GY) : 0, k = p.i + ":" + bs;
+    const prev = viewCamState[k] === undefined ? want : viewCamState[k];
+    let v = prev + (want - prev) * 0.15;
+    if (Math.abs(want - v) < 0.5) v = want;
+    viewCamState[k] = v; return v;
   }
   function drawPanel(p) {
     const ox = 0, cx = PANEL / 2;   // se dibuja en su propio espacio; draw() lo coloca y escala
     const bs = p._bs || BS, kz = bs / BS;          // tamaño de cuadro (más grande en celular)
     const PH = p._ph || H, GY = PH - (H - GROUND_Y); // alto del panel (se ajusta a la pantalla del celular)
-    const cam = p._bs ? focusCam(p, bs, GY) : p.cam;
+    const cam = viewCam(p, bs, GY, PH);
     const shakeX = p.shake > 0 ? Math.sin(p.shake * 60) * 4 : 0;
     const gx0 = cx - (GW / 2) * bs;
     const cellX = (c) => gx0 + (c + 0.5) * bs + shakeX;
