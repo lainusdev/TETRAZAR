@@ -76,8 +76,7 @@
   .namebox { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 18px 0 0; }
   .namebox label { font-weight: 800; font-size: 12px; letter-spacing: 0.032em; }
   #nameInput { font-family: var(--ui); font-weight: 800; font-size: 18px; width: 260px; text-align: center; border: 2px solid var(--black); border-radius: 999px; padding: 9px 14px; background: var(--white); }
-  #wrap.touch { align-items: flex-start; padding: 0; }
-  #wrap.touch canvas { border: 0; border-radius: 0; }
+  #wrap.touch { align-items: flex-start; padding-top: 6px; }
   body.playing, body.playing * { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: none; }
   button, canvas { touch-action: manipulation; }
   canvas { touch-action: none; }
@@ -249,9 +248,8 @@
 
   function fitCanvas() {
     const tp = document.getElementById("touchpad");
-    const padH = document.getElementById("wrap").classList.contains("touch") ? (tp.offsetHeight || 110) : 0;
-    const touchMode = document.getElementById("wrap").classList.contains("touch");
-    const s = touchMode ? window.innerWidth / cv.width : Math.min(window.innerWidth / cv.width, (window.innerHeight - padH) / cv.height);
+    const padH = document.getElementById("wrap").classList.contains("touch") ? (tp.offsetHeight || 128) + 8 : 0;
+    const s = Math.min(window.innerWidth / cv.width, (window.innerHeight - padH) / cv.height);
     cv.style.width = (cv.width * s) + "px"; cv.style.height = (cv.height * s) + "px";
   }
   window.addEventListener("resize", fitCanvas); fitCanvas();
@@ -1219,10 +1217,10 @@
     if (fp) {
       L.focus = fp; L.mode = "focus"; L.width = PANEL;
       // el panel se ajusta a la forma de la pantalla para que el tablero ocupe todo el ancho
-      const availW = Math.max(200, window.innerWidth), availH = Math.max(300, window.innerHeight - (document.getElementById("touchpad").offsetHeight || 110));
-      const ph = Math.round(Math.max(600, Math.min(1100, PANEL * availH / availW - TOP)));
+      const availW = Math.max(200, window.innerWidth), availH = Math.max(300, window.innerHeight - ((document.getElementById("touchpad").offsetHeight || 128) + 8));
+      const ph = Math.round(Math.max(640, Math.min(H, PANEL * availH / availW - TOP)));
       L.height = TOP + ph;
-      fp._bs = PANEL / PLAT_N; fp._ph = ph;   // la columna de juego ocupa todo el ancho
+      fp._bs = 42; fp._ph = ph;
       L.rects[fp.i] = { x: 0, y: TOP, s: 1 };
       return L;
     }
@@ -1348,7 +1346,7 @@
   const focusCamState = {};
   function focusCam(p, bs, GY) {
     // siempre se ve la punta de la torre y ~6 pisos libres arriba; la pieza entra cayendo desde arriba
-    const want = Math.max(0, (height(p) + 5) * bs - (GY - 64));
+    const want = Math.max(0, (height(p) + 7) * bs - (GY - 96));
     const prev = focusCamState[p.i] === undefined ? want : focusCamState[p.i];
     const v = prev + (want - prev) * 0.15;
     focusCamState[p.i] = v; return v;
@@ -1356,9 +1354,7 @@
   function drawPanel(p) {
     const ox = 0, cx = PANEL / 2;   // se dibuja en su propio espacio; draw() lo coloca y escala
     const bs = p._bs || BS, kz = bs / BS;          // tamaño de cuadro (más grande en celular)
-    const PH = p._ph || H;                          // alto del panel (se ajusta a la pantalla del celular)
-    const compact = !!p._bs, HUDH = compact ? 64 : 92, HANDH = compact ? 70 : 104;
-    const GY = PH - HANDH - (compact ? 4 : 36);
+    const PH = p._ph || H, GY = PH - (H - GROUND_Y); // alto del panel (se ajusta a la pantalla del celular)
     const cam = p._bs ? focusCam(p, bs, GY) : p.cam;
     const shakeX = p.shake > 0 ? Math.sin(p.shake * 60) * 4 : 0;
     const gx0 = cx - (GW / 2) * bs;
@@ -1377,9 +1373,9 @@
     ctx.fillStyle = S.black; ctx.fillRect(px0 - 2, 0, 2, GY + cam); ctx.fillRect(px0 + pw, 0, 2, GY + cam);
     ctx.font = font(800, 11); ctx.textAlign = "right"; ctx.textBaseline = "middle";
     for (let k = 2; k < 200; k += 2) {
-      const y = GY - k * bs + cam; if (y < HUDH + 4 || y > GY + cam) continue;
+      const y = GY - k * bs + cam; if (y < 96 || y > GY + cam) continue;
       ctx.fillStyle = "#e3eefa"; ctx.fillRect(px0, y, pw, 1);
-      ctx.fillStyle = "#7f97b3"; ctx.fillText(k, p._bs ? px0 + pw - 8 : ox + PANEL - 12, p._bs ? y - 9 : y);
+      ctx.fillStyle = "#7f97b3"; ctx.fillText(k, ox + PANEL - 12, y);
     }
     // meta
     const my = GY - p.meta * bs + cam;
@@ -1388,11 +1384,8 @@
     pill(`META ${p.meta}`, ox + 10, my, S.sun, S.black, "left", 11);
     // plataforma
     const gy = GY + cam;
-    if (compact) { ctx.fillStyle = S.black; ctx.fillRect(ox, gy, PANEL, 4); }   // celular: línea delgada
-    else {
-      box(cx - 22 + shakeX, gy + 12, 44, PH, 8, S.white, 2);
-      box(px0 - 6 + shakeX, gy + 2, pw + 12, 18, 9, S.black, 2);
-    }
+    box(cx - 22 + shakeX, gy + 12, 44, PH, 8, S.white, 2);
+    box(px0 - 6 + shakeX, gy + 2, pw + 12, 18, 9, S.black, 2);
 
     // piezas de la torre
     for (const [k, id] of p.grid) {
@@ -1427,23 +1420,6 @@
     ctx.globalAlpha = 1;
 
     // HUD superior
-    const cp = probCaida(p), pr = cp.P;
-    if (compact) {
-      ctx.fillStyle = S.white; ctx.fillRect(ox, 0, PANEL, HUDH);
-      ctx.fillStyle = S.black; ctx.fillRect(ox, HUDH - 2, PANEL, 2);
-      let hx3 = ox + 10;
-      hx3 += pill(String(p.name || `Jugador ${p.i + 1}`).toUpperCase(), hx3, 18, p.color, PLAYER_TEXT[p.i], "left", 12) + 5;
-      hx3 += pill(`ALT ${height(p)}`, hx3, 18, S.white, S.black, "left", 11) + 5;
-      hx3 += pill(`● ${p.coins}`, hx3, 18, S.sun, S.black, "left", 11) + 5;
-      if (p.speedLvl > 1.01) pill(`×${p.speedLvl.toFixed(1)}`, hx3, 18, S.lav, S.black, "left", 11);
-      const pFill = pr >= 0.25 ? S.ember : pr > 0 ? S.sun : S.mint;
-      pill(pr > 0 ? (pr * 100).toFixed(1) + "%" : "ESTABLE", ox + PANEL - 10, 18, pFill, pr >= 0.25 ? S.white : S.black, "right", 13);
-      ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.font = font(700, 11); ctx.fillStyle = "#555";
-      const sub = pr > 0 ? `Punta delgada: ancho ${cp.ancho.toFixed(1)} de ${cp.minimo} · ⏱ ${Math.ceil(p.stabT)}s` : cp.h < ALTURA_MIN ? `Sin riesgo hasta altura ${ALTURA_MIN}` : `Ancho de la punta: ${cp.ancho.toFixed(1)}`;
-      ctx.fillText(sub, ox + 12, 46, PANEL - 140);
-      if (p.ref > 0) pill(`REF ${p.ref}`, ox + PANEL - 10, 46, S.blue, S.black, "right", 10);
-      if (p.sab > 0) pill(`SAB ${p.sab}`, ox + PANEL - (p.ref > 0 ? 70 : 10), 46, S.ember, S.white, "right", 10);
-    } else {
     ctx.fillStyle = S.white; ctx.fillRect(ox, 0, PANEL, 92);
     ctx.fillStyle = S.black; ctx.fillRect(ox, 90, PANEL, 2);
     pill(String(p.name || `Jugador ${p.i + 1}`).toUpperCase(), ox + 12, 24, p.color, PLAYER_TEXT[p.i], "left", 14);
@@ -1453,6 +1429,7 @@
     hx2 += pill(`ALTURA ${height(p)}`, hx2, 74, S.white, S.black, "left", 11) + 5;
     hx2 += pill(`● ${p.coins}`, hx2, 74, S.sun, S.black, "left", 11) + 5;
     if (p.speedLvl > 1.01) pill(`VEL ×${p.speedLvl.toFixed(1)}`, hx2, 74, S.lav, S.black, "left", 11);
+    const cp = probCaida(p), pr = cp.P;
     const pFill = pr >= 0.25 ? S.ember : pr > 0 ? S.sun : S.mint;
     pill(pr > 0 ? (pr * 100).toFixed(1) + "%" : "ESTABLE", ox + PANEL - 12, 26, pFill, pr >= 0.25 ? S.white : S.black, "right", 17);
     ctx.textAlign = "right"; ctx.textBaseline = "alphabetic"; ctx.font = font(700, 11); ctx.fillStyle = "#555";
@@ -1460,21 +1437,19 @@
     if (p.ref > 0) pill(`REFUERZO ${p.ref}`, ox + PANEL - 12, 75, S.blue, S.black, "right", 10);
     if (p.sab > 0) pill(`SABOTEADO ${p.sab}`, ox + PANEL - (p.ref > 0 ? 112 : 12), 75, S.ember, S.white, "right", 10);
 
-    }
-
     if (p.msgT > 0) {
       ctx.font = font(700, 12);
       const w = Math.min(PANEL - 16, ctx.measureText(p.msg).width + 26);
-      box(cx - w / 2, HUDH + 10, w, 28, 14, S.white, 1.5);
-      ctx.fillStyle = S.black; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(p.msg, cx, HUDH + 25, PANEL - 34);
+      box(cx - w / 2, 102, w, 28, 14, S.white, 1.5);
+      ctx.fillStyle = S.black; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(p.msg, cx, 117, PANEL - 34);
     }
     if (p.bigT > 0) {
       ctx.globalAlpha = Math.min(1, p.bigT * 2); ctx.font = dfont(26); ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.lineJoin = "round";
       const mw = PANEL - 40;
-      ctx.lineWidth = 10; ctx.strokeStyle = S.white; ctx.strokeText(p.big.toUpperCase(), cx, HUDH + 76, mw);
-      ctx.lineWidth = 4; ctx.strokeStyle = S.black; ctx.strokeText(p.big.toUpperCase(), cx, HUDH + 76, mw);
-      ctx.fillStyle = SHOUT_COLORS[p.bigColor] || p.bigColor; ctx.fillText(p.big.toUpperCase(), cx, HUDH + 76, mw); ctx.globalAlpha = 1;
+      ctx.lineWidth = 10; ctx.strokeStyle = S.white; ctx.strokeText(p.big.toUpperCase(), cx, 168, mw);
+      ctx.lineWidth = 4; ctx.strokeStyle = S.black; ctx.strokeText(p.big.toUpperCase(), cx, 168, mw);
+      ctx.fillStyle = SHOUT_COLORS[p.bigColor] || p.bigColor; ctx.fillText(p.big.toUpperCase(), cx, 168, mw); ctx.globalAlpha = 1;
     }
     if (p.dice) {
       const s = 100, dx = cx - s / 2, dy = 230;
@@ -1488,7 +1463,7 @@
     // pregunta de la meta
     if (p.quiz) {
       const z = p.quiz;
-      ctx.fillStyle = "rgba(220,238,255,0.85)"; ctx.fillRect(ox, HUDH, PANEL, PH - HUDH);
+      ctx.fillStyle = "rgba(220,238,255,0.85)"; ctx.fillRect(ox, 92, PANEL, PH - 92);
       box(ox + 10, 196, PANEL - 20, 408, 24, S.white, 2);
       ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; ctx.fillStyle = S.black; ctx.font = dfont(22);
       ctx.fillText("¡PREGUNTA!", ox + 28, 232);
@@ -1528,7 +1503,7 @@
     // tienda
     const shopKey = keyInfo(p).shop;
     if (p.shopOpen) {
-      ctx.fillStyle = "rgba(220,238,255,0.8)"; ctx.fillRect(ox, HUDH, PANEL, PH - HUDH);
+      ctx.fillStyle = "rgba(220,238,255,0.8)"; ctx.fillRect(ox, 92, PANEL, PH - 92);
       box(ox + 10, 286, PANEL - 20, 248, 24, S.white, 2);
       ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; ctx.fillStyle = S.black; ctx.font = dfont(24);
       ctx.fillText("TIENDA", ox + 28, 324);
@@ -1554,18 +1529,6 @@
     }
 
     // mano
-    if (compact) {
-      ctx.fillStyle = S.white; ctx.fillRect(ox, PH - HANDH, PANEL, HANDH);
-      ctx.fillStyle = S.black; ctx.fillRect(ox, PH - HANDH, PANEL, 2);
-      const slotW = 88, gap = 8, total = HAND * slotW + (HAND - 1) * gap, hx = cx - total / 2;
-      for (let k = 0; k < HAND; k++) {
-        const x = hx + k * (slotW + gap), y = PH - HANDH + 10;
-        const selc = p.state === "play" && k === p.sel && p.act && k < p.hand.length;
-        box(x, y, slotW, HANDH - 20, 16, selc ? S.sky : S.white, selc ? 3 : 1.5);
-        if (p.state === "play" && k < p.hand.length) drawMiniPiece(p.hand[k], x + slotW / 2, y + (HANDH - 20) / 2, 13, 1);
-      }
-      if (p.state !== "play") { ctx.fillStyle = "rgba(255,255,255,0.8)"; ctx.fillRect(ox, PH - HANDH + 2, PANEL, HANDH - 2); ctx.fillStyle = "#444"; ctx.font = font(800, 12); ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(p.state === "quiz" ? "RESPONDIENDO PREGUNTA…" : p.state === "dice" ? "TIRANDO DADO…" : "CERRANDO LA MANO…", cx, PH - HANDH / 2); }
-    } else {
     ctx.fillStyle = S.white; ctx.fillRect(ox, PH - 104, PANEL, 104);
     ctx.fillStyle = S.black; ctx.fillRect(ox, PH - 104, PANEL, 2);
     ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; ctx.font = font(800, 11); ctx.fillStyle = "#444";
@@ -1580,7 +1543,6 @@
       const selc = p.state === "play" && k === p.sel && p.act && k < p.hand.length;
       box(x, y, slotW, 58, 18, selc ? S.sky : S.white, selc ? 3 : 1.5);
       if (p.state === "play" && k < p.hand.length) drawMiniPiece(p.hand[k], x + slotW / 2, y + 29, 14, 1);
-    }
     }
     ctx.restore();
   }
