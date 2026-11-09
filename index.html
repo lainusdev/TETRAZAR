@@ -78,14 +78,13 @@
   #nameInput { font-family: var(--ui); font-weight: 800; font-size: 18px; width: 260px; text-align: center; border: 2px solid var(--black); border-radius: 999px; padding: 9px 14px; background: var(--white); }
   #wrap.touch { align-items: flex-start; padding-top: 6px; }
   canvas { touch-action: none; }
-  #touchpad { position: fixed; left: 0; right: 0; bottom: 0; height: 170px; display: flex; justify-content: space-between; align-items: center; padding: 10px min(16px, 3vw) calc(10px + env(safe-area-inset-bottom)); background: var(--white); border-top: 2px solid var(--black); touch-action: none; user-select: none; -webkit-user-select: none; z-index: 5; }
+  #touchpad { position: fixed; left: 0; right: 0; bottom: 0; display: flex; flex-direction: column; gap: 8px; padding: 8px 14px calc(12px + env(safe-area-inset-bottom)); background: var(--white); border-top: 2px solid var(--black); touch-action: none; user-select: none; -webkit-user-select: none; z-index: 5; }
   #touchpad.hidden { display: none; }
-  .tgroup { display: flex; gap: min(10px, 1.5vw); align-items: center; }
-  #touchpad button { margin: 0; width: min(74px, 14vw); height: min(74px, 14vw); padding: 0; border-radius: 50%; background: var(--white); color: var(--black); border: 2px solid var(--black); font-size: 30px; font-weight: 800; letter-spacing: 0; touch-action: none; }
-  #touchpad button.big { width: min(96px, 18vw); height: min(96px, 18vw); background: var(--sun); font-size: 40px; }
-  #touchpad button.small { width: min(58px, 11.5vw); height: min(58px, 11.5vw); font-size: 22px; }
-  #touchpad button.shopb { font-size: 10px; background: var(--lav); }
-  #touchpad button.on { background: var(--blue); }
+  .ghint { display: flex; justify-content: space-between; gap: 6px; font-size: 11px; font-weight: 800; color: #333; }
+  .tbtns { display: flex; gap: 12px; }
+  .tb { flex: 1; margin: 0; height: 64px; white-space: nowrap; border-radius: 999px; border: 2px solid var(--black); color: var(--black); font-size: 18px; font-weight: 800; letter-spacing: 0.02em; text-transform: uppercase; touch-action: none; }
+  .tcycle { background: var(--blue); } .tshop { background: var(--lav); }
+  .tb.on { background: var(--sun); }
   @media (max-width: 760px) {
     .overlay { padding: 14px; }
     .logo { font-size: 72px; }
@@ -149,15 +148,10 @@
   </div>
 
   <div id="touchpad" class="hidden">
-    <div class="tgroup">
-      <button data-act="left" aria-label="Izquierda">◀</button>
-      <button data-act="down" aria-label="Bajar">▼</button>
-      <button data-act="right" aria-label="Derecha">▶</button>
-    </div>
-    <div class="tgroup">
-      <button data-act="cycle" class="small" aria-label="Cambiar pieza">⇄</button>
-      <button data-act="shop" class="small shopb" aria-label="Tienda">TIENDA</button>
-      <button data-act="rot" class="big" aria-label="Rotar o elegir">⟳</button>
+    <div class="ghint"><span>⇆ Desliza: mover</span><span>● Toca: rotar</span><span>⇣ Desliza abajo: bajar</span></div>
+    <div class="tbtns">
+      <button data-act="cycle" class="tb tcycle" aria-label="Cambiar pieza">⇄ Cambiar</button>
+      <button data-act="shop" class="tb tshop" aria-label="Tienda">Tienda</button>
     </div>
   </div>
 
@@ -251,9 +245,9 @@
   let lastT = performance.now(), acc = 0, simTime = 0, pieceSeq = 0;
 
   function fitCanvas() {
-    const padH = document.getElementById("wrap").classList.contains("touch") ? 176 : 0;
-    const s = Math.min(window.innerWidth / cv.width, (window.innerHeight - padH) / CH);
-    cv.style.width = (cv.width * s) + "px"; cv.style.height = (CH * s) + "px";
+    const padH = document.getElementById("wrap").classList.contains("touch") ? 128 : 0;
+    const s = Math.min(window.innerWidth / cv.width, (window.innerHeight - padH) / cv.height);
+    cv.style.width = (cv.width * s) + "px"; cv.style.height = (cv.height * s) + "px";
   }
   window.addEventListener("resize", fitCanvas); fitCanvas();
 
@@ -277,7 +271,7 @@
   function keyInfo(p) {
     const e = effInput(p);
     if (e.type === "kb") return e.id === "kb1" ? { rot: "W", mov: "A/D", shop: "E" } : { rot: "↑", mov: "←/→", shop: "PUNTO" };
-    if (e.type === "touch") return { rot: "⟳", mov: "◀ ▶", shop: "BOTÓN" };
+    if (e.type === "touch") return { rot: "TOCA", mov: "DESLIZA", shop: "BOTÓN" };
     return { rot: "A", mov: "CRUCETA", shop: "Y" };
   }
 
@@ -354,6 +348,33 @@
     b.addEventListener("pointerdown", (e) => { e.preventDefault(); b.classList.add("on"); localEvent(loc, act, true); });
     for (const ev of ["pointerup", "pointercancel", "pointerleave"]) b.addEventListener(ev, () => { if (b.classList.contains("on")) { b.classList.remove("on"); localEvent(loc, act, false); } });
   }
+  // Gestos sobre el tablero: deslizar = mover, tocar = rotar, deslizar hacia abajo = bajar rápido
+  const gest = { id: null, x0: 0, y0: 0, lastX: 0, t0: 0, moved: false, dropping: false };
+  const touchPlaying = () => (phase === "play" || phase === "net") && hasLocalTouch();
+  const tapAct = (act) => { localEvent({ type: "touch" }, act, true); localEvent({ type: "touch" }, act, false); };
+  cv.addEventListener("pointerdown", (e) => {
+    if (!touchPlaying()) return;
+    e.preventDefault();
+    Object.assign(gest, { id: e.pointerId, x0: e.clientX, y0: e.clientY, lastX: e.clientX, t0: performance.now(), moved: false, dropping: false });
+    try { cv.setPointerCapture(e.pointerId); } catch (err) {}
+  });
+  cv.addEventListener("pointermove", (e) => {
+    if (gest.id !== e.pointerId) return;
+    const step = BS * (cv.clientWidth / cv.width) * 0.85;
+    let dx = e.clientX - gest.lastX;
+    while (dx >= step) { tapAct("right"); gest.lastX += step; dx -= step; gest.moved = true; }
+    while (dx <= -step) { tapAct("left"); gest.lastX -= step; dx += step; gest.moved = true; }
+    const dy = e.clientY - gest.y0;
+    if (!gest.dropping && dy > 45 && Math.abs(e.clientX - gest.x0) < dy) { gest.dropping = true; gest.moved = true; localEvent({ type: "touch" }, "down", true); }
+  });
+  const endGesture = (e) => {
+    if (gest.id !== e.pointerId) return;
+    if (gest.dropping) localEvent({ type: "touch" }, "down", false);
+    else if (!gest.moved && performance.now() - gest.t0 < 350 && Math.hypot(e.clientX - gest.x0, e.clientY - gest.y0) < 14) tapAct("rot");
+    gest.id = null;
+  };
+  cv.addEventListener("pointerup", endGesture);
+  cv.addEventListener("pointercancel", endGesture);
   const hasLocalTouch = () => net.role === "client" ? net.myLocals.some(l => l.type === "touch") : joined.some(j => j.type === "touch");
 
   // ---------- Sala (local, crear online, unirse) ----------
@@ -1185,10 +1206,15 @@
   }
   // Dónde va cada tablero: los 4 lado a lado (en celular, solo el tuyo en grande)
   function computeLayout() {
-    const L = { rects: {}, width: W, mode: "grid", focus: null };
+    const L = { rects: {}, width: W, height: CH, mode: "grid", focus: null };
     const fp = phase !== "lobby" ? focusPlayer() : null;
     if (fp) {
       L.focus = fp; L.mode = "focus"; L.width = PANEL;
+      // el panel se ajusta a la forma de la pantalla para que el tablero ocupe todo el ancho
+      const availW = Math.max(200, window.innerWidth), availH = Math.max(300, window.innerHeight - 128);
+      const ph = Math.round(Math.max(640, Math.min(H, PANEL * availH / availW - TOP)));
+      L.height = TOP + ph;
+      fp._bs = 42; fp._ph = ph;
       L.rects[fp.i] = { x: 0, y: TOP, s: 1 };
       return L;
     }
@@ -1253,8 +1279,8 @@
 
   function draw() {
     const L = computeLayout();
-    if (cv.width !== L.width) { cv.width = L.width; fitCanvas(); }
-    ctx.fillStyle = S.sky; ctx.fillRect(0, 0, cv.width, CH);
+    if (cv.width !== L.width || cv.height !== L.height) { cv.width = L.width; cv.height = L.height; fitCanvas(); }
+    ctx.fillStyle = S.sky; ctx.fillRect(0, 0, cv.width, cv.height);
     if (phase === "lobby") return;
     if (L.mode === "grid") {
       for (let i = players.length; i < 4; i++) {
@@ -1310,52 +1336,64 @@
   }
   const SHOUT_COLORS = { "#ea2b2b": "#fb4903", "#58a700": "#55db9c", "#e5a500": "#ffd731", "#ff9600": "#fb4903", "#1899d6": "#4da2ff", "#4b4b4b": "#ffffff" };
 
+  // Cámara propia para la vista de celular (tablero más grande que en compu)
+  const focusCamState = {};
+  function focusCam(p, bs, GY) {
+    // siempre se ve la punta de la torre y ~6 pisos libres arriba; la pieza entra cayendo desde arriba
+    const want = Math.max(0, (height(p) + 7) * bs - (GY - 96));
+    const prev = focusCamState[p.i] === undefined ? want : focusCamState[p.i];
+    const v = prev + (want - prev) * 0.15;
+    focusCamState[p.i] = v; return v;
+  }
   function drawPanel(p) {
     const ox = 0, cx = PANEL / 2;   // se dibuja en su propio espacio; draw() lo coloca y escala
+    const bs = p._bs || BS, kz = bs / BS;          // tamaño de cuadro (más grande en celular)
+    const PH = p._ph || H, GY = PH - (H - GROUND_Y); // alto del panel (se ajusta a la pantalla del celular)
+    const cam = p._bs ? focusCam(p, bs, GY) : p.cam;
     const shakeX = p.shake > 0 ? Math.sin(p.shake * 60) * 4 : 0;
-    const gx0 = cx - (GW / 2) * BS;
-    const cellX = (c) => gx0 + (c + 0.5) * BS + shakeX;
-    const cellY = (r) => GROUND_Y - (r + 0.5) * BS + p.cam;
-    const toX = (wx) => cx + (wx - p.wx);
-    const toY = (wy) => GROUND_Y + wy + p.cam;
+    const gx0 = cx - (GW / 2) * bs;
+    const cellX = (c) => gx0 + (c + 0.5) * bs + shakeX;
+    const cellY = (r) => GY - (r + 0.5) * bs + cam;
+    const toX = (wx) => cx + (wx - p.wx) * kz;
+    const toY = (wy) => GY + wy * kz + cam;
     ctx.save();
-    ctx.beginPath(); ctx.rect(ox, 0, PANEL, H); ctx.clip();
-    ctx.fillStyle = S.sky; ctx.fillRect(ox, 0, PANEL, H);
-    if (p.flash > 0) { ctx.globalAlpha = Math.min(0.5, p.flash); ctx.fillStyle = S.ember; ctx.fillRect(ox, 0, PANEL, H); ctx.globalAlpha = 1; }
+    ctx.beginPath(); ctx.rect(ox, 0, PANEL, PH); ctx.clip();
+    ctx.fillStyle = S.sky; ctx.fillRect(ox, 0, PANEL, PH);
+    if (p.flash > 0) { ctx.globalAlpha = Math.min(0.5, p.flash); ctx.fillStyle = S.ember; ctx.fillRect(ox, 0, PANEL, PH); ctx.globalAlpha = 1; }
 
     // columna de juego (sobre la plataforma)
-    const px0 = gx0 + PLAT_L * BS, pw = PLAT_N * BS;
-    ctx.fillStyle = S.white; ctx.fillRect(px0, 0, pw, GROUND_Y + p.cam);
-    ctx.fillStyle = S.black; ctx.fillRect(px0 - 2, 0, 2, GROUND_Y + p.cam); ctx.fillRect(px0 + pw, 0, 2, GROUND_Y + p.cam);
+    const px0 = gx0 + PLAT_L * bs, pw = PLAT_N * bs;
+    ctx.fillStyle = S.white; ctx.fillRect(px0, 0, pw, GY + cam);
+    ctx.fillStyle = S.black; ctx.fillRect(px0 - 2, 0, 2, GY + cam); ctx.fillRect(px0 + pw, 0, 2, GY + cam);
     ctx.font = font(800, 11); ctx.textAlign = "right"; ctx.textBaseline = "middle";
     for (let k = 2; k < 200; k += 2) {
-      const y = GROUND_Y - k * BS + p.cam; if (y < 96 || y > GROUND_Y + p.cam) continue;
+      const y = GY - k * bs + cam; if (y < 96 || y > GY + cam) continue;
       ctx.fillStyle = "#e3eefa"; ctx.fillRect(px0, y, pw, 1);
       ctx.fillStyle = "#7f97b3"; ctx.fillText(k, ox + PANEL - 12, y);
     }
     // meta
-    const my = GROUND_Y - p.meta * BS + p.cam;
+    const my = GY - p.meta * bs + cam;
     ctx.strokeStyle = S.black; ctx.setLineDash([8, 6]); ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(ox + 84, my); ctx.lineTo(ox + PANEL - 30, my); ctx.stroke(); ctx.setLineDash([]);
     pill(`META ${p.meta}`, ox + 10, my, S.sun, S.black, "left", 11);
     // plataforma
-    const gy = GROUND_Y + p.cam;
-    box(cx - 22 + shakeX, gy + 12, 44, H, 8, S.white, 2);
+    const gy = GY + cam;
+    box(cx - 22 + shakeX, gy + 12, 44, PH, 8, S.white, 2);
     box(px0 - 6 + shakeX, gy + 2, pw + 12, 18, 9, S.black, 2);
 
     // piezas de la torre
     for (const [k, id] of p.grid) {
       if (id === SOLID) continue;
       const [c, r] = k.split(",").map(Number);
-      const pc = p.pieces.get(id); if (pc) drawCell(cellX(c), cellY(r), 0, pc.color);
+      const pc = p.pieces.get(id); if (pc) drawCell(cellX(c), cellY(r), 0, pc.color, 1, bs);
     }
     // líneas sólidas: losa de concreto
     const solidRows = fullRows(p).filter(r => p.grid.get(key(PLAT_L, r)) === SOLID);
     for (const r of solidRows) {
-      const x = px0 + shakeX + 1, y = cellY(r) - BS / 2 + 1, w = pw - 2;
-      box(x, y, w, BS - 2, 9, S.gray, 2);
+      const x = px0 + shakeX + 1, y = cellY(r) - bs / 2 + 1, w = pw - 2;
+      box(x, y, w, bs - 2, 9, S.gray, 2);
       ctx.fillStyle = "rgba(0,0,0,0.25)";
-      for (let c = 1; c < PLAT_N; c++) ctx.fillRect(x + c * BS - 1, y + 7, 2, BS - 16);
+      for (let c = 1; c < PLAT_N; c++) ctx.fillRect(x + c * bs - 1, y + 7, 2, bs - 16);
       rr(x + 8, y + 5, w * 0.3, 4, 2); ctx.fillStyle = "rgba(255,255,255,0.8)"; ctx.fill();
     }
     // pieza activa y sombra de dónde caerá
@@ -1363,14 +1401,14 @@
       const a = p.act;
       let dy = 0; while (dy > -60 && fits(p, absCells(a, 0, dy - 1))) dy--;
       if (a.y + dy >= -1) for (const [c, r] of absCells(a, 0, dy)) {
-        rr(cellX(c) - BS / 2 + 3, cellY(r) - BS / 2 + 3, BS - 6, BS - 6, 6);
+        rr(cellX(c) - bs / 2 + 3, cellY(r) - bs / 2 + 3, bs - 6, bs - 6, 6);
         ctx.setLineDash([4, 4]); ctx.strokeStyle = S.black; ctx.lineWidth = 1.5; ctx.stroke(); ctx.setLineDash([]);
       }
-      for (const [c, r] of absCells(a)) drawCell(cellX(c), cellY(r), 0, a.color);
+      for (const [c, r] of absCells(a)) drawCell(cellX(c), cellY(r), 0, a.color, 1, bs);
     }
     for (const b of p.debris) {
       const alpha = Math.min(1, b.life / 0.6);
-      for (const part of b.parts.slice(1)) drawCell(toX(part.position.x), toY(part.position.y), b.angle, b.gColor, alpha);
+      for (const part of b.parts.slice(1)) drawCell(toX(part.position.x), toY(part.position.y), b.angle, b.gColor, alpha, bs);
     }
     for (const pt of particles) if (pt.owner === p.i) { ctx.globalAlpha = Math.max(0, pt.life); box(cellX(pt.x) - 5, cellY(pt.y) - 5, 10, 10, 3, pt.color, 1); }
     ctx.globalAlpha = 1;
@@ -1419,7 +1457,7 @@
     // pregunta de la meta
     if (p.quiz) {
       const z = p.quiz;
-      ctx.fillStyle = "rgba(220,238,255,0.85)"; ctx.fillRect(ox, 92, PANEL, H - 92);
+      ctx.fillStyle = "rgba(220,238,255,0.85)"; ctx.fillRect(ox, 92, PANEL, PH - 92);
       box(ox + 10, 196, PANEL - 20, 408, 24, S.white, 2);
       ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; ctx.fillStyle = S.black; ctx.font = dfont(22);
       ctx.fillText("¡PREGUNTA!", ox + 28, 232);
@@ -1459,7 +1497,7 @@
     // tienda
     const shopKey = keyInfo(p).shop;
     if (p.shopOpen) {
-      ctx.fillStyle = "rgba(220,238,255,0.8)"; ctx.fillRect(ox, 92, PANEL, H - 92);
+      ctx.fillStyle = "rgba(220,238,255,0.8)"; ctx.fillRect(ox, 92, PANEL, PH - 92);
       box(ox + 10, 286, PANEL - 20, 248, 24, S.white, 2);
       ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; ctx.fillStyle = S.black; ctx.font = dfont(24);
       ctx.fillText("TIENDA", ox + 28, 324);
@@ -1485,17 +1523,17 @@
     }
 
     // mano
-    ctx.fillStyle = S.white; ctx.fillRect(ox, 796, PANEL, 104);
-    ctx.fillStyle = S.black; ctx.fillRect(ox, 796, PANEL, 2);
+    ctx.fillStyle = S.white; ctx.fillRect(ox, PH - 104, PANEL, 104);
+    ctx.fillStyle = S.black; ctx.fillRect(ox, PH - 104, PANEL, 2);
     ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; ctx.font = font(800, 11); ctx.fillStyle = "#444";
     const nLeft = p.hand.length;
     const label = p.state === "quiz" ? "RESPONDIENDO PREGUNTA…" : p.state === "play" ? `MANO ${p.handNo + 1} · P(CAER EN ${nLeft}) = ${pct(1 - Math.pow(1 - pr, nLeft))}` : p.state === "dice" ? "TIRANDO DADO…" : "CERRANDO LA MANO…";
-    ctx.fillText(label, ox + 14, 818, PANEL - 120);
+    ctx.fillText(label, ox + 14, PH - 82, PANEL - 120);
     const canBuy = p.coins >= Math.min(COST_R, COST_S, COST_N);
-    pill(`${shopKey.toUpperCase()}: TIENDA`, ox + PANEL - 12, 813, canBuy ? S.black : S.mist, canBuy ? S.white : "#888", "right", 10);
+    pill(`${shopKey.toUpperCase()}: TIENDA`, ox + PANEL - 12, PH - 87, canBuy ? S.black : S.mist, canBuy ? S.white : "#888", "right", 10);
     const slotW = 86, gap = 8, total = HAND * slotW + (HAND - 1) * gap, hx = cx - total / 2;
     for (let k = 0; k < HAND; k++) {
-      const x = hx + k * (slotW + gap), y = 830;
+      const x = hx + k * (slotW + gap), y = PH - 70;
       const selc = p.state === "play" && k === p.sel && p.act && k < p.hand.length;
       box(x, y, slotW, 58, 18, selc ? S.sky : S.white, selc ? 3 : 1.5);
       if (p.state === "play" && k < p.hand.length) drawMiniPiece(p.hand[k], x + slotW / 2, y + 29, 14, 1);
