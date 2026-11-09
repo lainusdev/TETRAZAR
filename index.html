@@ -73,6 +73,9 @@
   #codeInput { font-family: var(--display); font-size: 30px; width: 190px; text-align: center; letter-spacing: 6px; text-transform: uppercase; border: 2px solid var(--black); border-radius: 999px; padding: 6px 12px; background: var(--sky); }
   #joinBtn { margin: 0; }
   .netstatus { margin: 10px 0 0; font-weight: 700; font-size: 14px; }
+  .namebox { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 18px 0 0; }
+  .namebox label { font-weight: 800; font-size: 12px; letter-spacing: 0.032em; }
+  #nameInput { font-family: var(--ui); font-weight: 800; font-size: 18px; width: 260px; text-align: center; border: 2px solid var(--black); border-radius: 999px; padding: 9px 14px; background: var(--white); }
   #wrap.touch { align-items: flex-start; padding-top: 6px; }
   canvas { touch-action: none; }
   #touchpad { position: fixed; left: 0; right: 0; bottom: 0; height: 170px; display: flex; justify-content: space-between; align-items: center; padding: 10px min(16px, 3vw) calc(10px + env(safe-area-inset-bottom)); background: var(--white); border-top: 2px solid var(--black); touch-action: none; user-select: none; -webkit-user-select: none; z-index: 5; }
@@ -121,6 +124,7 @@
         <div id="joinBox" class="hidden"><input id="codeInput" maxlength="4" autocomplete="off" autocapitalize="characters" placeholder="CÓDIGO"><button id="joinBtn">Entrar</button></div>
         <p id="netStatus" class="netstatus"></p>
       </div>
+      <div class="namebox"><label for="nameInput">TU NOMBRE</label><input id="nameInput" maxlength="12" autocomplete="off" placeholder="Escribe tu nombre"></div>
       <div class="slots" id="slots"></div>
       <p class="join">Para unirte presiona <kbd>W</kbd> (teclado izq.), <kbd>↑</kbd> (flechas) o <kbd>A</kbd> en un control. Hasta 2 jugadores por compu.</p>
       <p class="join"><button id="touchBtn" class="ghost hidden">Unirme con controles táctiles</button></p>
@@ -128,7 +132,7 @@
         <div class="rule r1"><div class="t">APILA</div><p>Cada mano trae 4 piezas al azar. Acomódalas sobre la plataforma en el orden que quieras.</p></div>
         <div class="rule r2"><div class="t">LÍNEA SÓLIDA</div><p>Llena una línea completa y se vuelve piedra: ya nada la rompe.</p></div>
         <div class="rule r3"><div class="t">OJO CON LOS COLORES</div><p>Si juntas 3 piezas del mismo color, desaparecen.</p></div>
-        <div class="rule r4"><div class="t">NO LA HAGAS FLACA</div><p>Si la punta de tu torre es delgada, se puede derrumbar. Entre más alta, más riesgo.</p></div>
+        <div class="rule r4"><div class="t">NO LA HAGAS FLACA</div><p>Desde altura 7, si la punta de tu torre es delgada se puede derrumbar. Entre más alta, más riesgo.</p></div>
         <div class="rule r5"><div class="t">LLEGA A LA META</div><p>Responde una pregunta rápida. Si aciertas, tiras el dado y le quitas piezas a un rival.</p></div>
         <div class="rule r6"><div class="t">CUIDADO AL FALLAR</div><p>Si fallas la pregunta no hay dado y pierdes de 1 a 3 piezas.</p></div>
         <div class="rule r7"><div class="t">TIENDA</div><p>Gana monedas con manos limpias y líneas sólidas. Compra refuerzo, sabotaje o nueva mano.</p></div>
@@ -207,6 +211,7 @@
   const K_CAIDA = 0.04;                // P(caída) = 4% × altura × delgadez
   const ANCHO_OK = 5;                   // si la punta mide 5 o más de ancho, la torre es estable (P = 0)
   const PUNTA = 6;                      // pisos de arriba que se miden
+  const ALTURA_MIN = 7;                 // antes de esta altura la torre nunca se cae
   const P_MAX = 0.95;
   const REF_PIEZAS = 8, SAB_PIEZAS = 6; // cuántas tiradas dura cada efecto de la tienda
   const STAB_T = 4;                     // además de cada pieza, hay una tirada de estabilidad cada 4 s
@@ -352,21 +357,33 @@
   const hasLocalTouch = () => net.role === "client" ? net.myLocals.some(l => l.type === "touch") : joined.some(j => j.type === "touch");
 
   // ---------- Sala (local, crear online, unirse) ----------
+  const myName = () => (document.getElementById("nameInput").value || "").trim().replace(/[<>&"]/g, "").slice(0, 12);
+  try { const saved = localStorage.getItem("tetrazar-name"); if (saved) document.getElementById("nameInput").value = saved; } catch (e) {}
+  document.getElementById("nameInput").addEventListener("input", () => { try { localStorage.setItem("tetrazar-name", myName()); } catch (e) {} });
+  document.getElementById("nameInput").addEventListener("keydown", (e) => { if (e.key === "Enter") e.target.blur(); });
+  function uniqueName(base) {
+    if (!base) return "";
+    const used = joined.map(j => j.name);
+    if (!used.includes(base)) return base;
+    for (let k = 2; k < 9; k++) if (!used.includes(base + " " + k)) return base + " " + k;
+    return base;
+  }
   function lobbyJoin(loc) {
     if (net.role === "client") {
       if (!net.hostConn || !net.hostConn.open) { setNetStatus("Primero entra a una sala con su código."); return; }
-      if (!net.myLocals.some(l => sameLocal(l, loc))) { net.myLocals.push(loc); sendHost({ t: "join", loc }); }
+      if (!net.myLocals.some(l => sameLocal(l, loc))) { net.myLocals.push(loc); sendHost({ t: "join", loc, name: myName() }); }
       return;
     }
-    joinInput(loc);
+    joinInput(Object.assign({}, loc, { name: myName() }));
   }
   function joinInput(inp) {
     if (joined.length >= 4) return;
     const dup = joined.some(j => inp.type === "net" ? (j.type === "net" && j.peer === inp.peer && sameLocal(j.local, inp.local)) : (j.type !== "net" && sameLocal(j, inp)));
     if (dup) return;
+    inp.name = uniqueName(String(inp.name || "").replace(/[<>&"]/g, "").slice(0, 12));
     joined.push(inp); renderSlots(); broadcastLobby();
   }
-  function lobbyList() { return joined.map(j => ({ label: inputLabel(j), peer: j.type === "net" ? j.peer : null })); }
+  function lobbyList() { return joined.map(j => ({ label: inputLabel(j), peer: j.type === "net" ? j.peer : null, name: j.name || "" })); }
   function renderSlots() {
     const list = net.role === "client" ? net.lobby : lobbyList();
     const el = document.getElementById("slots"); el.innerHTML = "";
@@ -375,7 +392,7 @@
       d.className = "slot" + (j ? " on" : "");
       if (j) { d.style.background = PLAYER_COLORS[i]; d.style.color = ["#fff", "#000", "#fff", "#000"][i]; } else { d.style.background = ""; d.style.color = "#6a7f99"; }
       const mine = j && net.role === "client" && j.peer === net.myId ? " · tú" : "";
-      d.innerHTML = j ? `<b style="color:inherit">Jugador ${i + 1}</b><small>${j.label}${mine}</small>` : `<b style="color:inherit">Jugador ${i + 1}</b><small>Esperando…</small>`;
+      d.innerHTML = j ? `<b style="color:inherit">${j.name || "Jugador " + (i + 1)}</b><small>${j.label}${mine}</small>` : `<b style="color:inherit">Jugador ${i + 1}</b><small>Esperando…</small>`;
       el.appendChild(d);
     }
     const sb = document.getElementById("startBtn");
@@ -439,7 +456,7 @@
   }
   function onHostData(conn, msg) {
     if (!msg || typeof msg !== "object") return;
-    if (msg.t === "join" && phase === "lobby" && msg.loc) joinInput({ type: "net", peer: conn.peer, local: msg.loc });
+    if (msg.t === "join" && phase === "lobby" && msg.loc) joinInput({ type: "net", peer: conn.peer, local: msg.loc, name: msg.name });
     else if (msg.t === "in" && phase === "play" && msg.loc) {
       const p = findByNet(conn.peer, msg.loc);
       if (msg.down) playerDown(p, msg.act); else playerUp(p, msg.act);
@@ -505,7 +522,7 @@
       at: attacks.map(a => [a.id, a.from, a.to, r2(a.t), a.kind, a.n]),
       pt: particles.map(q => [q.owner, r2(q.x), r2(q.y), q.color, r2(q.life)]),
       pl: players.map(p => ({
-        i: p.i, peer: p.input.type === "net" ? p.input.peer : null, loc: effInput(p), lab: inputLabel(p.input),
+        i: p.i, nm: p.name, peer: p.input.type === "net" ? p.input.peer : null, loc: effInput(p), lab: inputLabel(p.input),
         g: [...p.grid].map(([k, id]) => { const [c, r] = k.split(",").map(Number); const pc = p.pieces.get(id); return [c, r, id === SOLID ? -1 : (pc ? pc.color : 0)]; }),
         act: p.act ? { cells: p.act.cells, x: p.act.x, y: p.act.y, color: p.act.color, shape: p.act.shape } : null,
         hand: p.hand, sel: p.sel, coins: p.coins, meta: p.meta, ref: p.ref, sab: p.sab, state: p.state, handNo: p.handNo,
@@ -527,7 +544,7 @@
       for (let c = 0; c < COLORS.length; c++) pieces.set(c + 1, { id: c + 1, color: c, cells: [] });
       for (const [c, r, col] of s.g) grid.set(key(c, r), col === -1 ? SOLID : col + 1);
       return {
-        i: s.i, color: PLAYER_COLORS[s.i], wx: s.i * 3000, input: { type: "shadow", label: s.lab, local: s.loc, peer: s.peer },
+        i: s.i, name: s.nm, color: PLAYER_COLORS[s.i], wx: s.i * 3000, input: { type: "shadow", label: s.lab, local: s.loc, peer: s.peer },
         grid, pieces, act: s.act, hand: s.hand, sel: s.sel, coins: s.coins, meta: s.meta, ref: s.ref, sab: s.sab, state: s.state, handNo: s.handNo,
         stabT: s.stabT, speedLvl: s.spd, msg: s.msg, msgT: s.msgT, big: s.big, bigT: s.bigT, bigColor: s.bigC, shake: s.shake, flash: s.flash, cam: s.cam, t: s.t,
         dice: null, _dice: s.dice, quiz: s.quiz, shopOpen: s.shop, shopSel: s.shopSel, linesThisHand: 0,
@@ -563,7 +580,7 @@
 
   function makePlayer(i, inp) {
     const p = {
-      i, input: inp, color: PLAYER_COLORS[i], wx: i * 3000,
+      i, input: inp, name: inp.name || `Jugador ${i + 1}`, color: PLAYER_COLORS[i], wx: i * 3000,
       grid: new Map(), pieces: new Map(), gravityOn: false, gravT: 0,
       hand: [], sel: 0, act: null, spawnT: 0, handNo: 0, handStart: [], order: [], lostOff: 0,
       hold: { left: false, right: false, down: false }, rep: { left: 0, right: 0 },
@@ -753,7 +770,7 @@
     const h = height(p), ancho = anchoPunta(p);
     const minimo = ANCHO_OK + (p.sab > 0 ? 1 : 0);          // el sabotaje te exige 1 más de ancho
     const delgadez = Math.max(0, (minimo - ancho) / minimo);
-    let P = K_CAIDA * h * delgadez;
+    let P = h >= ALTURA_MIN ? K_CAIDA * h * delgadez : 0;
     if (p.ref > 0) P *= 0.5;
     return { P: h ? Math.max(0, Math.min(P_MAX, P)) : 0, h, ancho, minimo, delgadez };
   }
@@ -1021,8 +1038,8 @@
       for (let k = 0; k < n && k < top.length; k++) { removePiece(t, top[k]); flingCells(t, top[k].cells, top[k].color, rnd() < 0.5 ? -1 : 1, false); removed++; }
       t.stats.atacado += removed; t.flash = 0.8;
       attacks.push({ id: ++attackSeq, from: p.i, to: t.i, t: 0, dur: 0.9, kind: "dado", n: removed });
-      shout(t, `Jugador ${p.i + 1} te quitó ${removed}`, "#ea2b2b", 2);
-      say(p, `Dado: ${n} → Jugador ${t.i + 1} pierde ${removed} piezas. Nueva meta: ${p.meta + META_STEP}`, 4);
+      shout(t, `${p.name} te quitó ${removed}`, "#ea2b2b", 2);
+      say(p, `Dado: ${n} → ${t.name} pierde ${removed} piezas. Nueva meta: ${p.meta + META_STEP}`, 4);
     } else say(p, `Dado: ${n} (sin rivales). Nueva meta: ${p.meta + META_STEP}`, 4);
     diceLog.push({ jugador: p.i + 1, tiempo: simTime.toFixed(1), meta: p.meta, dado: n, objetivo: d.target ? d.target.i + 1 : "-", rivales: players.length - 1, piezas_quitadas: removed });
     p.stats.dados++;
@@ -1052,7 +1069,7 @@
     p.coins -= item.cost; p.stats.compras++;
     if (item.id === "R") { p.ref += REF_PIEZAS; shout(p, "Refuerzo activado", "#1899d6"); }
     else if (item.id === "S") {
-      for (const o of players) if (o !== p) { attacks.push({ id: ++attackSeq, from: p.i, to: o.i, t: 0, dur: 0.9, kind: "sab", n: 0 }); o.sab += SAB_PIEZAS; say(o, `Jugador ${p.i + 1} te saboteó: necesitas ancho 6 por ${SAB_PIEZAS} tiradas`); o.flash = 0.6; }
+      for (const o of players) if (o !== p) { attacks.push({ id: ++attackSeq, from: p.i, to: o.i, t: 0, dur: 0.9, kind: "sab", n: 0 }); o.sab += SAB_PIEZAS; say(o, `${p.name} te saboteó: necesitas ancho 6 por ${SAB_PIEZAS} tiradas`); o.flash = 0.6; }
       shout(p, "Sabotaje enviado", "#ea2b2b");
     } else if (item.id === "N") {
       for (let k = 0; k < p.hand.length; k++) if (!(p.act && k === p.sel)) p.hand[k] = randPiece();
@@ -1361,7 +1378,7 @@
     // HUD superior
     ctx.fillStyle = S.white; ctx.fillRect(ox, 0, PANEL, 92);
     ctx.fillStyle = S.black; ctx.fillRect(ox, 90, PANEL, 2);
-    pill(`JUGADOR ${p.i + 1}`, ox + 12, 24, p.color, PLAYER_TEXT[p.i], "left", 14);
+    pill(String(p.name || `Jugador ${p.i + 1}`).toUpperCase(), ox + 12, 24, p.color, PLAYER_TEXT[p.i], "left", 14);
     ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; ctx.fillStyle = "#555"; ctx.font = font(800, 11);
     ctx.fillText(inputLabel(p.input).toUpperCase(), ox + 14, 54);
     let hx2 = ox + 12;
@@ -1372,7 +1389,7 @@
     const pFill = pr >= 0.25 ? S.ember : pr > 0 ? S.sun : S.mint;
     pill(pr > 0 ? (pr * 100).toFixed(1) + "%" : "ESTABLE", ox + PANEL - 12, 26, pFill, pr >= 0.25 ? S.white : S.black, "right", 17);
     ctx.textAlign = "right"; ctx.textBaseline = "alphabetic"; ctx.font = font(700, 11); ctx.fillStyle = "#555";
-    ctx.fillText(pr > 0 ? `Punta delgada: ancho ${cp.ancho.toFixed(1)} de ${cp.minimo} · ⏱ ${Math.ceil(p.stabT)}s` : `Ancho de la punta: ${cp.ancho >= GW ? "–" : cp.ancho.toFixed(1)}`, ox + PANEL - 14, 56);
+    ctx.fillText(pr > 0 ? `Punta delgada: ancho ${cp.ancho.toFixed(1)} de ${cp.minimo} · ⏱ ${Math.ceil(p.stabT)}s` : cp.h < ALTURA_MIN ? `Sin riesgo hasta altura ${ALTURA_MIN}` : `Ancho de la punta: ${cp.ancho.toFixed(1)}`, ox + PANEL - 14, 56);
     if (p.ref > 0) pill(`REFUERZO ${p.ref}`, ox + PANEL - 12, 75, S.blue, S.black, "right", 10);
     if (p.sab > 0) pill(`SABOTEADO ${p.sab}`, ox + PANEL - (p.ref > 0 ? 112 : 12), 75, S.ember, S.white, "right", 10);
 
@@ -1396,7 +1413,7 @@
       box(-s / 2, -s / 2, s, s, 24, S.white, 3);
       drawPips(0, 0, p.dice.face, s);
       ctx.restore();
-      if (p.t <= 0.5 && p.dice.target) pill(`→ JUGADOR ${p.dice.target.i + 1} · PROB. 1/${players.length - 1}`, cx, dy + s + 28, p.dice.target.color, PLAYER_TEXT[p.dice.target.i], "center", 13);
+      if (p.t <= 0.5 && p.dice.target) pill(`→ ${String(p.dice.target.name || "Jugador " + (p.dice.target.i + 1)).toUpperCase()} · PROB. 1/${players.length - 1}`, cx, dy + s + 28, p.dice.target.color, PLAYER_TEXT[p.dice.target.i], "center", 13);
     }
 
     // pregunta de la meta
@@ -1498,11 +1515,11 @@
     phase = "end";
     const ranking = [...players].sort((a, b) => height(b) - height(a) || b.coins - a.coins);
     const w = ranking[0];
-    document.getElementById("winner").innerHTML = `¡GANA <span style="background:${w.color};color:${PLAYER_TEXT[w.i]};border:2px solid #000;border-radius:999px;padding:0 18px">JUGADOR ${w.i + 1}</span>!<br><span style="font-size:22px;font-family:Inter,sans-serif;font-weight:800">Altura ${height(w)}</span>`;
+    document.getElementById("winner").innerHTML = `¡GANA <span style="background:${w.color};color:${PLAYER_TEXT[w.i]};border:2px solid #000;border-radius:999px;padding:0 18px">${String(w.name).toUpperCase()}</span>!<br><span style="font-size:22px;font-family:Inter,sans-serif;font-weight:800">Altura ${height(w)}</span>`;
     let html = `<table><tr><th>Lugar</th><th>Jugador</th><th>Altura</th><th>Manos</th><th>Manos limpias</th><th>Conexiones</th><th>Piezas perdidas por conexión</th><th>Caídas / tiradas</th><th>Piezas perdidas por derrumbe</th><th>Líneas sólidas</th><th>Preguntas acertadas</th><th>Piezas perdidas por fallar</th><th>Dados</th><th>Piezas quitadas por dado</th><th>Compras</th></tr>`;
     ranking.forEach((p, k) => {
       const st = p.stats;
-      html += `<tr><td>${k + 1}</td><td><span style="background:${p.color};color:${PLAYER_TEXT[p.i]};border:1.5px solid #000;border-radius:999px;padding:2px 10px;font-weight:800">Jugador ${p.i + 1}</span></td><td>${height(p)}</td><td>${st.manos}</td><td>${st.seguras}</td><td>${st.conexiones}</td><td>${st.perdidasLinea}</td><td>${st.temblores} / ${st.tiradas}</td><td>${st.perdidasDerrumbe}</td><td>${st.solidas}</td><td>${st.aciertos} / ${st.preguntas}</td><td>${st.castigoPregunta}</td><td>${st.dados}</td><td>${st.atacado}</td><td>${st.compras}</td></tr>`;
+      html += `<tr><td>${k + 1}</td><td><span style="background:${p.color};color:${PLAYER_TEXT[p.i]};border:1.5px solid #000;border-radius:999px;padding:2px 10px;font-weight:800">${p.name}</span></td><td>${height(p)}</td><td>${st.manos}</td><td>${st.seguras}</td><td>${st.conexiones}</td><td>${st.perdidasLinea}</td><td>${st.temblores} / ${st.tiradas}</td><td>${st.perdidasDerrumbe}</td><td>${st.solidas}</td><td>${st.aciertos} / ${st.preguntas}</td><td>${st.castigoPregunta}</td><td>${st.dados}</td><td>${st.atacado}</td><td>${st.compras}</td></tr>`;
     });
     document.getElementById("resTable").innerHTML = html + "</table>";
 
