@@ -1166,31 +1166,13 @@
     if (net.role === "host") return players.filter(p => p.input.type !== "net");
     return players;
   }
-  // Dónde va cada tablero: en sala online el tuyo grande y los demás en miniatura (estilo Tetris 99)
+  // Dónde va cada tablero: los 4 lado a lado (en celular, solo el tuyo en grande)
   function computeLayout() {
     const L = { rects: {}, width: W, mode: "grid", focus: null };
     const fp = phase !== "lobby" ? focusPlayer() : null;
     if (fp) {
-      const others = players.filter(p => p !== fp);
-      L.focus = fp; L.mode = "focus"; L.width = others.length ? PANEL + 104 : PANEL;
+      L.focus = fp; L.mode = "focus"; L.width = PANEL;
       L.rects[fp.i] = { x: 0, y: TOP, s: 1 };
-      others.forEach((p, k) => { L.rects[p.i] = { x: PANEL + 8, y: TOP + 10 + k * 216, s: 0.22 }; });
-      return L;
-    }
-    const mine = myPlayers();
-    if (net.role !== "local" && mine.length && mine.length < players.length) {
-      const others = players.filter(p => !mine.includes(p));
-      const s = 0.48, sw = PANEL * s, sh = H * s;
-      L.mode = "t99";
-      if (mine.length === 1) {
-        L.rects[mine[0].i] = { x: 600, y: TOP, s: 1 };
-        const slots = [[600 - 24 - sw, TOP + 8], [1000 + 24, TOP + 8], [600 - 24 - sw, TOP + 20 + sh]];
-        others.forEach((p, k) => { L.rects[p.i] = { x: slots[k][0], y: slots[k][1], s }; });
-      } else {
-        mine.forEach((p, k) => { L.rects[p.i] = { x: 400 + k * 400, y: TOP, s: 1 }; });
-        const slots = [[400 - 24 - sw, TOP + 8], [1200 + 24, TOP + 8], [400 - 24 - sw, TOP + 20 + sh]];
-        others.forEach((p, k) => { L.rects[p.i] = { x: slots[k][0], y: slots[k][1], s }; });
-      }
       return L;
     }
     players.forEach(p => { L.rects[p.i] = { x: p.i * PANEL, y: TOP, s: 1 }; });
@@ -1200,7 +1182,9 @@
   // Flecha de ataque: sale de quien ataca, viaja por la barra de arriba y baja por el espacio
   // entre tableros hasta quien recibe, para no tapar la vista de nadie.
   function attackPath(L, a) {
-    const A = L.rects[a.from], B = L.rects[a.to]; if (!A || !B) return null;
+    const A = L.rects[a.from], B = L.rects[a.to];
+    if (!B) return null;
+    if (!A) return [[B.x + 14, 2], [B.x + 14, B.y + 22 * B.s]];   // en celular: la flecha baja desde arriba
     const aw = PANEL * A.s, bw = PANEL * B.s;
     const g = L.mode === "grid" ? 0 : L.mode === "focus" ? 4 : 12;
     const acx = A.x + aw / 2, bcx = B.x + bw / 2;
@@ -1223,7 +1207,7 @@
     for (const a of attacks) {
       const path = attackPath(L, a); if (!path) continue;
       let total = 0; for (let k = 1; k < path.length; k++) total += Math.hypot(path[k][0] - path[k - 1][0], path[k][1] - path[k - 1][1]);
-      const col = PLAYER_COLORS[a.from] || S.ember, ink = PLAYER_TEXT[a.from] || S.white;
+      const col = "#ff2a2a", ink = S.white;   // flecha de ataque siempre roja
       const u = Math.min(1, a.t / a.dur), e = 1 - Math.pow(1 - u, 3);
       const [ex, ey] = path[path.length - 1];
       if (a.t < a.dur) {
