@@ -242,7 +242,7 @@
   const cv = document.getElementById("cv");
   const ctx = cv.getContext("2d");
   let engine = null, players = [], joined = [], phase = "lobby", timeLeft = GAME_TIME, paused = false;
-  let handLog = [], diceLog = [], quakeLog = [], quizLog = [], particles = [];
+  let handLog = [], diceLog = [], quakeLog = [], quizLog = [], particles = [], attacks = [], attackSeq = 0;
   let lastT = performance.now(), acc = 0, simTime = 0, pieceSeq = 0;
 
   function fitCanvas() {
@@ -483,7 +483,7 @@
       if (phase !== "lobby") { phase = "lobby"; players = []; document.getElementById("results").classList.add("hidden"); document.getElementById("lobby").classList.remove("hidden"); }
       renderSlots();
     } else if (msg.t === "start") {
-      phase = "net"; players = [];
+      phase = "net"; players = []; attacks = [];
       document.getElementById("lobby").classList.add("hidden");
       document.getElementById("results").classList.add("hidden");
     } else if (msg.t === "s" && (phase === "net")) applySnapshot(msg.d);
@@ -502,6 +502,7 @@
     const r1 = (v) => Math.round(v * 10) / 10, r2 = (v) => Math.round(v * 100) / 100;
     return {
       tl: r1(timeLeft),
+      at: attacks.map(a => [a.id, a.from, a.to, r2(a.t), a.kind, a.n]),
       pt: particles.map(q => [q.owner, r2(q.x), r2(q.y), q.color, r2(q.life)]),
       pl: players.map(p => ({
         i: p.i, peer: p.input.type === "net" ? p.input.peer : null, loc: effInput(p), lab: inputLabel(p.input),
@@ -519,6 +520,7 @@
   }
   function applySnapshot(d) {
     timeLeft = d.tl;
+    for (const [id, from, to, t, kind, n] of (d.at || [])) if (!attacks.some(a => a.id === id)) attacks.push({ id, from, to, t, dur: 0.9, kind, n });
     particles = d.pt.map(([owner, x, y, color, life]) => ({ owner, x, y, color, life }));
     const list = d.pl.map(s => {
       const grid = new Map(), pieces = new Map();
@@ -552,7 +554,7 @@
       engine.positionIterations = 10; engine.velocityIterations = 8;
     }
     players = joined.map((inp, i) => makePlayer(i, inp));
-    handLog = []; diceLog = []; quakeLog = []; quizLog = []; particles = []; simTime = 0;
+    handLog = []; diceLog = []; quakeLog = []; quizLog = []; particles = []; attacks = []; simTime = 0;
     timeLeft = GAME_TIME; paused = false; phase = "play"; net.sendT = 0;
     if (net.role === "host") broadcast({ t: "start" });
     document.getElementById("lobby").classList.add("hidden");
@@ -1018,6 +1020,7 @@
       const top = loosePieces(t).sort((a, b) => Math.max(...b.cells.map(x => x[1])) - Math.max(...a.cells.map(x => x[1])));
       for (let k = 0; k < n && k < top.length; k++) { removePiece(t, top[k]); flingCells(t, top[k].cells, top[k].color, rnd() < 0.5 ? -1 : 1, false); removed++; }
       t.stats.atacado += removed; t.flash = 0.8;
+      attacks.push({ id: ++attackSeq, from: p.i, to: t.i, t: 0, dur: 0.9, kind: "dado", n: removed });
       shout(t, `Jugador ${p.i + 1} te quitó ${removed}`, "#ea2b2b", 2);
       say(p, `Dado: ${n} → Jugador ${t.i + 1} pierde ${removed} piezas. Nueva meta: ${p.meta + META_STEP}`, 4);
     } else say(p, `Dado: ${n} (sin rivales). Nueva meta: ${p.meta + META_STEP}`, 4);
@@ -1049,7 +1052,7 @@
     p.coins -= item.cost; p.stats.compras++;
     if (item.id === "R") { p.ref += REF_PIEZAS; shout(p, "Refuerzo activado", "#1899d6"); }
     else if (item.id === "S") {
-      for (const o of players) if (o !== p) { o.sab += SAB_PIEZAS; say(o, `Jugador ${p.i + 1} te saboteó: necesitas ancho 6 por ${SAB_PIEZAS} tiradas`); o.flash = 0.6; }
+      for (const o of players) if (o !== p) { attacks.push({ id: ++attackSeq, from: p.i, to: o.i, t: 0, dur: 0.9, kind: "sab", n: 0 }); o.sab += SAB_PIEZAS; say(o, `Jugador ${p.i + 1} te saboteó: necesitas ancho 6 por ${SAB_PIEZAS} tiradas`); o.flash = 0.6; }
       shout(p, "Sabotaje enviado", "#ea2b2b");
     } else if (item.id === "N") {
       for (let k = 0; k < p.hand.length; k++) if (!(p.act && k === p.sel)) p.hand[k] = randPiece();
@@ -1128,6 +1131,7 @@
       if (timeLeft <= 0) { timeLeft = 0; endGame(); }
       if (net.role === "host" && net.conns.length && phase === "play") { net.sendT -= dt; if (net.sendT <= 0) { net.sendT = 1 / 15; broadcast({ t: "s", d: snapshot() }); } }
     }
+    if ((phase === "play" && !paused) || phase === "net") { for (const a of attacks) a.t += dt; attacks = attacks.filter(a => a.t < a.dur + 0.6); }
     const showPad = (phase === "play" || phase === "net") && hasLocalTouch();
     document.getElementById("touchpad").classList.toggle("hidden", !showPad);
     const wrapEl = document.getElementById("wrap");
@@ -1156,45 +1160,138 @@
   }
   const PLAYER_TEXT = ["#ffffff", "#000000", "#ffffff", "#000000"];
 
-  function draw() {
+  // ¿Cuáles jugadores son "míos" en este dispositivo?
+  function myPlayers() {
+    if (net.role === "client") return players.filter(p => p.input.peer === net.myId);
+    if (net.role === "host") return players.filter(p => p.input.type !== "net");
+    return players;
+  }
+  // Dónde va cada tablero: en sala online el tuyo grande y los demás en miniatura (estilo Tetris 99)
+  function computeLayout() {
+    const L = { rects: {}, width: W, mode: "grid", focus: null };
     const fp = phase !== "lobby" ? focusPlayer() : null;
-    const wantW = fp ? PANEL : W;
-    if (cv.width !== wantW) { cv.width = wantW; fitCanvas(); }
+    if (fp) {
+      const others = players.filter(p => p !== fp);
+      L.focus = fp; L.mode = "focus"; L.width = others.length ? PANEL + 104 : PANEL;
+      L.rects[fp.i] = { x: 0, y: TOP, s: 1 };
+      others.forEach((p, k) => { L.rects[p.i] = { x: PANEL + 8, y: TOP + 10 + k * 216, s: 0.22 }; });
+      return L;
+    }
+    const mine = myPlayers();
+    if (net.role !== "local" && mine.length && mine.length < players.length) {
+      const others = players.filter(p => !mine.includes(p));
+      const s = 0.48, sw = PANEL * s, sh = H * s;
+      L.mode = "t99";
+      if (mine.length === 1) {
+        L.rects[mine[0].i] = { x: 600, y: TOP, s: 1 };
+        const slots = [[600 - 24 - sw, TOP + 8], [1000 + 24, TOP + 8], [600 - 24 - sw, TOP + 20 + sh]];
+        others.forEach((p, k) => { L.rects[p.i] = { x: slots[k][0], y: slots[k][1], s }; });
+      } else {
+        mine.forEach((p, k) => { L.rects[p.i] = { x: 400 + k * 400, y: TOP, s: 1 }; });
+        const slots = [[400 - 24 - sw, TOP + 8], [1200 + 24, TOP + 8], [400 - 24 - sw, TOP + 20 + sh]];
+        others.forEach((p, k) => { L.rects[p.i] = { x: slots[k][0], y: slots[k][1], s }; });
+      }
+      return L;
+    }
+    players.forEach(p => { L.rects[p.i] = { x: p.i * PANEL, y: TOP, s: 1 }; });
+    return L;
+  }
+
+  // Flecha de ataque: sale de quien ataca, viaja por la barra de arriba y baja por el espacio
+  // entre tableros hasta quien recibe, para no tapar la vista de nadie.
+  function attackPath(L, a) {
+    const A = L.rects[a.from], B = L.rects[a.to]; if (!A || !B) return null;
+    const aw = PANEL * A.s, bw = PANEL * B.s;
+    const g = L.mode === "grid" ? 0 : L.mode === "focus" ? 4 : 12;
+    const acx = A.x + aw / 2, bcx = B.x + bw / 2;
+    const toRight = bcx > acx;
+    const gA = toRight ? A.x + aw + g : A.x - g;
+    const gB = toRight ? B.x - g : B.x + bw + g;
+    const yA = A.y + 22 * A.s, yB = B.y + 22 * B.s, yBar = TOP - 9;
+    const endX = toRight ? B.x + 2 : B.x + bw - 2;
+    return [[toRight ? A.x + aw - 2 : A.x + 2, yA], [gA, yA], [gA, yBar], [gB, yBar], [gB, yB], [endX, yB]];
+  }
+  function pointOn(path, d) {
+    for (let k = 1; k < path.length; k++) {
+      const [x0, y0] = path[k - 1], [x1, y1] = path[k], len = Math.hypot(x1 - x0, y1 - y0);
+      if (d <= len || k === path.length - 1) { const u = len ? Math.min(1, d / len) : 1; return [x0 + (x1 - x0) * u, y0 + (y1 - y0) * u, Math.atan2(y1 - y0, x1 - x0)]; }
+      d -= len;
+    }
+    return [path[0][0], path[0][1], 0];
+  }
+  function drawAttacks(L) {
+    for (const a of attacks) {
+      const path = attackPath(L, a); if (!path) continue;
+      let total = 0; for (let k = 1; k < path.length; k++) total += Math.hypot(path[k][0] - path[k - 1][0], path[k][1] - path[k - 1][1]);
+      const col = PLAYER_COLORS[a.from] || S.ember, ink = PLAYER_TEXT[a.from] || S.white;
+      const u = Math.min(1, a.t / a.dur), e = 1 - Math.pow(1 - u, 3);
+      const [ex, ey] = path[path.length - 1];
+      if (a.t < a.dur) {
+        const d1 = e * total, d0 = Math.max(0, d1 - total * 0.45);
+        ctx.lineCap = "round"; ctx.lineJoin = "round";
+        for (const [lw, st] of [[8, S.black], [4.5, col]]) {
+          ctx.beginPath();
+          for (let k = 0; k <= 24; k++) { const [x, y] = pointOn(path, d0 + (d1 - d0) * k / 24); if (k) ctx.lineTo(x, y); else ctx.moveTo(x, y); }
+          ctx.strokeStyle = st; ctx.lineWidth = lw; ctx.stroke();
+        }
+        const [hx, hy, ang] = pointOn(path, d1);
+        ctx.save(); ctx.translate(hx, hy); ctx.rotate(ang);
+        ctx.beginPath(); ctx.moveTo(16, 0); ctx.lineTo(-8, -11); ctx.lineTo(-3, 0); ctx.lineTo(-8, 11); ctx.closePath();
+        ctx.fillStyle = col; ctx.fill(); ctx.strokeStyle = S.black; ctx.lineWidth = 2.5; ctx.stroke();
+        ctx.restore();
+        if (hy < TOP) pill(a.kind === "sab" ? "SABOTAJE" : `−${a.n}`, hx, TOP / 2, col, ink, "center", 11);
+      } else {
+        const k = Math.min(1, (a.t - a.dur) / 0.55);
+        ctx.globalAlpha = 1 - k;
+        for (const [lw, st] of [[5, S.black], [2.5, col]]) { ctx.beginPath(); ctx.arc(ex, ey, 8 + 26 * k, 0, Math.PI * 2); ctx.strokeStyle = st; ctx.lineWidth = lw; ctx.stroke(); }
+        ctx.globalAlpha = 1;
+        pill(a.kind === "sab" ? "SABOTAJE" : `−${a.n}`, ex, ey - 22, col, ink, "center", 11);
+      }
+    }
+  }
+
+  function draw() {
+    const L = computeLayout();
+    if (cv.width !== L.width) { cv.width = L.width; fitCanvas(); }
     ctx.fillStyle = S.sky; ctx.fillRect(0, 0, cv.width, CH);
     if (phase === "lobby") return;
-    if (fp) {
-      ctx.save(); ctx.translate(-fp.i * PANEL, TOP); drawPanel(fp); ctx.restore();
-      ctx.fillStyle = S.white; ctx.fillRect(0, 0, PANEL, TOP);
-      ctx.fillStyle = S.black; ctx.fillRect(0, TOP - 2, PANEL, 2);
+    if (L.mode === "grid") {
+      for (let i = players.length; i < 4; i++) {
+        const cx = i * PANEL + PANEL / 2;
+        ctx.fillStyle = S.mist; ctx.fillRect(i * PANEL, TOP, PANEL, H);
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.font = dfont(30); ctx.fillStyle = S.gray; ctx.fillText(`JUGADOR ${i + 1}`, cx, TOP + H / 2 - 10);
+        ctx.font = font(800, 12); ctx.fillStyle = "#8a8a8a"; ctx.fillText("LUGAR LIBRE", cx, TOP + H / 2 + 22);
+      }
+    }
+    for (const p of players) {
+      const r = L.rects[p.i]; if (!r) continue;
+      ctx.save(); ctx.translate(r.x, r.y); ctx.scale(r.s, r.s); drawPanel(p); ctx.restore();
+      if (r.s < 1) { rr(r.x, r.y, PANEL * r.s, H * r.s, 10); ctx.strokeStyle = S.black; ctx.lineWidth = 2; ctx.stroke(); }
+      else if (L.mode !== "grid") { ctx.fillStyle = S.black; ctx.fillRect(r.x - 1, r.y, 2, H); ctx.fillRect(r.x + PANEL - 1, r.y, 2, H); }
+    }
+    if (L.mode === "grid") for (let i = 1; i < 4; i++) { ctx.fillStyle = S.black; ctx.fillRect(i * PANEL - 1, TOP, 2, H); }
+    // barra superior
+    const BW = cv.width;
+    ctx.fillStyle = S.white; ctx.fillRect(0, 0, BW, TOP);
+    ctx.fillStyle = S.black; ctx.fillRect(0, TOP - 2, BW, 2);
+    const m = Math.floor(timeLeft / 60), s = Math.floor(timeLeft % 60);
+    const urgent = timeLeft < 30;
+    if (L.mode === "focus") {
       ctx.font = dfont(20); ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillStyle = S.black; ctx.fillText("TETRAZAR", 14, TOP / 2 + 1);
-      const m = Math.floor(timeLeft / 60), s = Math.floor(timeLeft % 60);
-      box(PANEL - 104, 6, 92, 32, 16, timeLeft < 30 ? S.ember : S.black, 2);
-      ctx.font = font(800, 18); ctx.textAlign = "center"; ctx.fillStyle = S.white; ctx.fillText(`${m}:${String(s).padStart(2, "0")}`, PANEL - 58, 23);
+      box(BW - 104, 6, 92, 32, 16, urgent ? S.ember : S.black, 2);
+      ctx.font = font(800, 18); ctx.textAlign = "center"; ctx.fillStyle = S.white; ctx.fillText(`${m}:${String(s).padStart(2, "0")}`, BW - 58, 23);
+      drawAttacks(L);
       return;
     }
-    ctx.save(); ctx.translate(0, TOP);
-    for (const p of players) drawPanel(p);
-    for (let i = players.length; i < 4; i++) {
-      const cx = i * PANEL + PANEL / 2;
-      ctx.fillStyle = S.mist; ctx.fillRect(i * PANEL, 0, PANEL, H);
-      ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.font = dfont(30); ctx.fillStyle = S.gray; ctx.fillText(`JUGADOR ${i + 1}`, cx, H / 2 - 10);
-      ctx.font = font(800, 12); ctx.fillStyle = "#8a8a8a"; ctx.fillText("LUGAR LIBRE", cx, H / 2 + 22);
-    }
-    for (let i = 1; i < 4; i++) { ctx.fillStyle = S.black; ctx.fillRect(i * PANEL - 1, 0, 2, H); }
-    ctx.restore();
-    // barra superior
-    ctx.fillStyle = S.white; ctx.fillRect(0, 0, W, TOP);
-    ctx.fillStyle = S.black; ctx.fillRect(0, TOP - 2, W, 2);
     ctx.font = dfont(26); ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillStyle = S.black;
     ctx.fillText("TETRAZAR", 18, TOP / 2 + 1);
     ctx.textAlign = "right"; ctx.font = font(800, 12); ctx.fillStyle = S.ink2;
-    ctx.fillText("ESC: PAUSA  ·  GANA LA TORRE MÁS ALTA", W - 18, TOP / 2);
-    const m = Math.floor(timeLeft / 60), s = Math.floor(timeLeft % 60);
-    const urgent = timeLeft < 30;
-    box(W / 2 - 64, 5, 128, 34, 17, urgent ? S.ember : S.black, 2);
+    ctx.fillText(net.role === "local" ? "ESC: PAUSA  ·  GANA LA TORRE MÁS ALTA" : (net.code ? "SALA " + net.code + "  ·  " : "") + "GANA LA TORRE MÁS ALTA", BW - 18, TOP / 2);
+    box(BW / 2 - 64, 5, 128, 34, 17, urgent ? S.ember : S.black, 2);
     ctx.font = font(800, 20); ctx.textAlign = "center"; ctx.fillStyle = S.white;
-    ctx.fillText(`${m}:${String(s).padStart(2, "0")}`, W / 2, 23);
+    ctx.fillText(`${m}:${String(s).padStart(2, "0")}`, BW / 2, 23);
+    drawAttacks(L);
   }
 
   function drawCell(x, y, ang, color, alpha = 1, size = BS) {
@@ -1213,7 +1310,7 @@
   const SHOUT_COLORS = { "#ea2b2b": "#fb4903", "#58a700": "#55db9c", "#e5a500": "#ffd731", "#ff9600": "#fb4903", "#1899d6": "#4da2ff", "#4b4b4b": "#ffffff" };
 
   function drawPanel(p) {
-    const ox = p.i * PANEL, cx = ox + PANEL / 2;
+    const ox = 0, cx = PANEL / 2;   // se dibuja en su propio espacio; draw() lo coloca y escala
     const shakeX = p.shake > 0 ? Math.sin(p.shake * 60) * 4 : 0;
     const gx0 = cx - (GW / 2) * BS;
     const cellX = (c) => gx0 + (c + 0.5) * BS + shakeX;
